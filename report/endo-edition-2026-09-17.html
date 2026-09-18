@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<title>The Endo Edition — Sept 17, 2026</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+
+<body>
+
+<header class="masthead">
+  <div class="masthead-top">
+    <span>Vol. 1 · No. 1</span>
+    <span>Teardown Dispatch</span>
+    <span>Sept 17, 2026</span>
+  </div>
+  <div>
+    <h1 class="masthead-title">Meta is<br>building a<br><em>computer</em><br>that uses<br>your Mac.</h1>
+    <p class="masthead-sub">The Muse desktop app already ships the entire code to see your screen, click, type, run programs, and drive a browser. Every switch is flipped <b>off</b> from a Meta server — and I found the switches.</p>
+  </div>
+  <div class="masthead-bottom">
+    <div><b>Method</b>Binary + server-flag teardown</div>
+    <div><b>Subject</b>Muse 1.0 · codename “Endo”</div>
+    <div><b>Confidence</b>Found in code, unshipped</div>
+    <div><b>Reading time</b>~6 minutes</div>
+  </div>
+</header>
+
+<section class="spread s01">
+  <span class="numeral">01</span>
+  <div class="badge-applies">Unreleased · found in code</div>
+  <p class="kicker">The five dark switches</p>
+  <h2>Computer control is written, wired, and turned off at the server.</h2>
+  <p class="standfirst">Muse ships its feature gates in a Meta config file (<code>endo-values-public</code>) that the app re-downloads on every launch. Five booleans in the <code>hatch_desktop</code> namespace decide whether Muse can operate the machine — and all five arrive <b>false</b>:</p>
+  <ul class="flaglist">
+    <li><code>enable_computer_control</code> <span>false</span></li>
+    <li><code>endo_enable_screen_recording</code> <span>false</span></li>
+    <li><code>enable_browser_automation</code> <span>false</span></li>
+    <li><code>endo_system_run_sandbox_enabled</code> <span>false</span></li>
+    <li><code>endo_enable_computer_use_onboarding</code> <span>false</span></li>
+  </ul>
+  <p class="source-line">Source · Muse 1.0 MobileConfig cache <code>~/Library/Caches/com.meta.endo/MobileConfig/endo-values-public-956902cf.json</code>, read Sept 17 2026. Values re-fetched from Meta every launch.</p>
+</section>
+
+<section class="spread s02">
+  <span class="numeral">02</span>
+  <p class="kicker">system.run · sandboxed execution</p>
+  <h2>It can run programs — one at a time, on a leash.</h2>
+  <pre>&gt; muse: system.run
+  "Execute a single program with argv-style arguments.
+   Shell operators, redirects, pipes, globbing, and
+   environment expansion are not supported."
+
+  "AppleScript (osascript / osacompile) and `open -a`
+   app launches are REJECTED in background mode."
+
+  gate: hatch_desktop:endo_system_run_sandbox_enabled = false</pre>
+  <p class="standfirst">The design is deliberately narrow: no shell string, no <code>-c</code>, argv only — so pipes and redirects an app blocklist can’t see never run. It’s an execution primitive built for a careful rollout, not a terminal.</p>
+  <p class="source-line">Source · strings in the Muse Mach-O binary (arm64, Developer ID “Meta Platforms, Inc.”), Sept 17 2026.</p>
+</section>
+
+<section class="spread s03">
+  <span class="numeral">03</span>
+  <p class="kicker">Vision · it wants to watch the screen</p>
+  <h2>ScreenCaptureKit is linked. The overlay is coded. The grant is asked for.</h2>
+  <p class="standfirst">The binary imports Apple’s modern screen-capture stack and the calls that request the permission at runtime — plus an on-screen “I’m looking” overlay and an accessibility-first click mode. Everything a computer-use agent needs to see a Mac is present:</p>
+  <ul class="flaglist">
+    <li><code>SCShareableContent</code> / <code>SCStreamConfiguration</code> <span>linked</span></li>
+    <li><code>CGRequestScreenCaptureAccess</code> <span>linked</span></li>
+    <li><code>[ComputerUse] Display assertion acquired</code> <span>string</span></li>
+    <li><code>_showComputerUseOverlay</code> <span>string</span></li>
+    <li><code>_preferAXForComputerUseClicks</code> <span>string</span></li>
+  </ul>
+  <p class="standfirst dim">Yet <code>environment.describe</code> reports <code>screen_recording: false</code> even after the macOS permission is granted — because the gate above overrides it.</p>
+  <p class="source-line">Source · linked symbols + strings, Muse 1.0 binary, Sept 17 2026.</p>
+</section>
+
+<section class="spread s04">
+  <span class="numeral">04</span>
+  <p class="kicker">Browser automation</p>
+  <h2>Muse can drive a Chromium over the DevTools protocol — on loopback.</h2>
+  <p class="standfirst">A second withheld capability: the app carries browser-automation plumbing that speaks CDP to a local debug endpoint. The gate is its own flag, separate from computer control — a hint the two ship independently.</p>
+  <div class="pullquote">--remote-debugging-address=127.0.0.1</div>
+  <p class="standfirst">Paired with <code>enable_browser_automation = false</code>, this is the same shape as every agentic-browser feature of 2026: a headed browser the model steers, kept on localhost so nothing’s exposed.</p>
+  <p class="source-line">Source · Muse 1.0 binary strings, Sept 17 2026.</p>
+</section>
+
+<section class="spread s05">
+  <span class="numeral">05</span>
+  <p class="kicker">Already live · the 51-command catalog</p>
+  <h2>What Muse can do today, before any switch flips.</h2>
+  <p class="standfirst">With computer-use gated off, the agent still exposes a 51-command device catalog. This is the surface that already works on a permissioned Mac:</p>
+  <div class="catgrid">
+    <div class="cat"><b>Calendar</b>create · delete · search · update</div>
+    <div class="cat"><b>Reminders</b>create · complete · delete · list · update</div>
+    <div class="cat"><b>Contacts</b>create · delete · search · update</div>
+    <div class="cat"><b>Notes</b>append · create · folders · read · search · update</div>
+    <div class="cat"><b>iMessage</b>send · search · threads · attachment · save</div>
+    <div class="cat"><b>Email</b>read · search · send · delete · status</div>
+    <div class="cat"><b>Files</b>read · write · edit · copy · rename · trash · upload · search · mkdir</div>
+    <div class="cat"><b>Also</b>camera.snap · whatsapp.search · media_library.sync · system.notify · environment.describe · connection.health/repair</div>
+  </div>
+  <p class="source-line">Source · live probe of Muse’s device command catalog, Mac mini, Sept 17 2026 — 51 commands enumerated; none for screen / click / type / shell.</p>
+</section>
+
+<section class="spread s06">
+  <span class="numeral">06</span>
+  <p class="kicker">Voice · two separate stacks</p>
+  <h2>Real-time speech in, real-time speech out.</h2>
+  <p class="standfirst">Beyond computer-use, the binary reveals a full voice roadmap — dictation and a duplex speech-to-speech engine with a named voice:</p>
+  <ul class="flaglist">
+    <li>Dictation → <code>wss://shortwave.facebook.com/voyager/v1/asr/duplex</code> <span>Voyager</span></li>
+    <li>Model <code>prod_hatch_macos</code> · <code>voyager_dictation_use_abra_auth</code> <span>ASR</span></li>
+    <li>Real-time S2S engine “Alo” · <code>aloS2SModelId</code> <span>duplex</span></li>
+    <li>Voice id <code>avocado_v2:MAI_02</code> · <code>enable_ptt_s2s</code> <span>push-to-talk</span></li>
+  </ul>
+  <p class="source-line">Source · MobileConfig values + binary strings, Muse 1.0, Sept 17 2026.</p>
+</section>
+
+<section class="spread s07">
+  <span class="numeral">07</span>
+  <p class="kicker">Under the hood</p>
+  <h2>The agent doesn’t run on your Mac. It runs in a Meta VM.</h2>
+  <p class="standfirst">The reason a local flag can’t force computer-use on: the agent itself lives in a per-user cloud VM, reached over a Noise-encrypted WebSocket gateway. The Mac is a set of hands; the brain is server-side.</p>
+  <ul class="flaglist">
+    <li>Per-user VM <span><code>hatch.metaaivm.com</code></span></li>
+    <li>Transport <span>Tigon HTTP · Noise wss gateway</span></li>
+    <li>Auth backend <span>Meta “Proton” · api.meta.ai/proton</span></li>
+    <li>Chat / agent API <span><code>hatch-api.meta.ai</code></span></li>
+  </ul>
+  <p class="standfirst dim">The config that withholds computer-use rides the same edge as login and session-refresh — so it can’t be blocked without killing the app.</p>
+  <p class="source-line">Source · launch-time DNS capture + binary transport symbols, Mac mini, Sept 17 2026.</p>
+</section>
+
+<section class="spread s08">
+  <span class="numeral">08</span>
+  <p class="kicker">The tell</p>
+  <h2>Employees first. This is a staged rollout, not a dead feature.</h2>
+  <p class="standfirst">Two flags in the same config give the release plan away — an onboarding flow that’s built but hidden, and an <b>employee</b> switch that ships in the public build:</p>
+  <div class="pullquote small">hatch_desktop:endo_enable_computer_use_onboarding<br>hatch_desktop:voyager_is_employee</div>
+  <p class="standfirst">An onboarding gate implies a first-run “let Muse control your Mac” walkthrough already exists. An employee gate implies Meta staff are testing it now, ahead of a cohort rollout to everyone else.</p>
+  <p class="source-line">Source · MobileConfig <code>endo-values-public</code>, Muse 1.0, Sept 17 2026.</p>
+</section>
+
+<section class="spread s09">
+  <span class="numeral">09</span>
+  <p class="kicker">By the numbers</p>
+  <div class="statrow">
+    <div class="stat"><span class="big">5</span><span class="lab">capability switches shipped, all off</span></div>
+    <div class="stat"><span class="big">51</span><span class="lab">device commands already live</span></div>
+    <div class="stat"><span class="big">1</span><span class="lab">cloud VM per user runs the agent</span></div>
+    <div class="stat"><span class="big">0</span><span class="lab">of it toggleable from your machine</span></div>
+  </div>
+  <p class="source-line">Source · aggregate of this teardown, Sept 17 2026. All figures measured, not estimated.</p>
+</section>
+
+<footer class="colophon">
+  <h3>That’s the<br>teardown.</h3>
+  <p>Everything here was read out of the shipping Muse 1.0 build and its Meta-served config on one Mac — the code for a screen-seeing, click-making, program-running, browser-driving desktop agent, sitting behind five server switches Meta hasn’t flipped for the public. Found in code is not shipped: names, gates, and plans change, and some features never leave the lab. But the scaffolding is real, and it is waiting.</p>
+  <div class="footer-meta">Teardown Dispatch · Sept 17 2026 · Unaffiliated with Meta · Inferred from disabled flags</div>
+</footer>
+
+</body>
+
+<script>
+  // print helper: ?pdf=1 adds a class some renderers key off; harmless otherwise
+  if (location.search.indexOf('pdf') > -1) document.documentElement.classList.add('pdf');
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
+  body {
+    font-family: 'Inter', sans-serif; font-size: 22px; line-height: 1.5;
+    color: #1a1a1a; background: #f5f3ee;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-x: hidden;
+  }
+  a { color: inherit; }
+  code { font-family: 'JetBrains Mono', monospace; font-size: 0.86em; background: rgba(0,0,0,0.07); padding: 1px 6px; border-radius: 4px; }
+  h1,h2,h3,.numeral,.masthead-title,.big,.pullquote { overflow-wrap: break-word; word-break: break-word; hyphens: auto; max-width: 100%; }
+  .spread, .masthead, .colophon { overflow-x: clip; }
+
+  .spread { min-height: 100vh; padding: 80px 8vw; display: flex; flex-direction: column; justify-content: center; position: relative; }
+  .kicker { font-family:'Inter'; font-weight:700; font-size:18px; letter-spacing:0.25em; text-transform:uppercase; margin-bottom:28px; }
+  .badge-applies { display:inline-block; background:#c33; color:#fff; padding:8px 20px; font-weight:800; font-size:16px; letter-spacing:0.18em; text-transform:uppercase; margin-bottom:28px; transform:rotate(-1deg); align-self:flex-start; }
+  .source-line { font-size:18px; font-weight:500; margin-top:auto; padding-top:56px; opacity:0.62; }
+  .source-line code { background:rgba(0,0,0,0.10); }
+  .numeral { font-family:'Fraunces'; font-weight:900; line-height:1; font-variation-settings:'opsz' 144; font-size:clamp(120px,20vw,240px); margin-bottom:8px; }
+  h2 { font-family:'Fraunces'; font-weight:900; font-size:clamp(40px,5.6vw,84px); line-height:1.02; letter-spacing:-0.02em; font-variation-settings:'opsz' 144; margin-bottom:8px; }
+  .standfirst { font-size:clamp(22px,2.2vw,29px); line-height:1.45; max-width:1000px; margin-top:22px; }
+  .standfirst.dim { opacity:0.72; font-style:italic; font-family:'Fraunces'; }
+  .flaglist { list-style:none; margin-top:30px; max-width:1000px; }
+  .flaglist li { display:flex; justify-content:space-between; align-items:baseline; gap:24px; padding:14px 0; border-bottom:1px solid rgba(0,0,0,0.18); font-family:'JetBrains Mono'; font-size:clamp(15px,1.5vw,20px); }
+  .flaglist li span { font-family:'Inter'; font-weight:800; font-size:15px; letter-spacing:0.12em; text-transform:uppercase; opacity:0.7; white-space:nowrap; }
+  .pullquote { font-family:'JetBrains Mono'; font-weight:700; font-size:clamp(22px,3.4vw,46px); margin:36px 0; padding:26px 32px; border-left:8px solid currentColor; line-height:1.25; }
+  .pullquote.small { font-size:clamp(16px,2.2vw,30px); }
+  pre { font-family:'JetBrains Mono'; font-size:clamp(14px,1.5vw,19px); line-height:1.5; white-space:pre-wrap; overflow-wrap:break-word; max-width:100%; margin-top:26px; padding:26px 30px; border-radius:10px; }
+  .catgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; margin-top:30px; max-width:1100px; }
+  .cat { padding:16px 20px; border:1px solid rgba(255,255,255,0.18); border-radius:10px; font-size:17px; line-height:1.4; }
+  .cat b { display:block; font-size:14px; letter-spacing:0.14em; text-transform:uppercase; margin-bottom:6px; color:#ffd166; }
+  .statrow { display:grid; grid-template-columns:repeat(2,1fr); gap:40px 60px; margin-top:20px; }
+  .stat { display:flex; flex-direction:column; }
+  .big { font-family:'Fraunces'; font-weight:900; font-size:clamp(96px,16vw,220px); line-height:0.9; color:#ffd166; font-variation-settings:'opsz' 144; }
+  .lab { font-size:20px; font-weight:600; margin-top:8px; max-width:360px; }
+
+  /* palettes */
+  .s01 { background:#f5f3ee; color:#1a1a1a; }
+  .s01 h2 { color:#c33; }
+  .s02 { background:#0d1117; color:#00ff88; }
+  .s02 h2 { color:#fff; } .s02 pre { background:rgba(0,255,136,0.06); border:1px solid rgba(0,255,136,0.22); color:#8affc4; }
+  .s02 .numeral { color:#1f8f5a; }
+  .s03 { background:#0a0e1a; color:#d4ddef; }
+  .s03 h2 { color:#6cf; } .s03 .numeral { color:#22324f; } .s03 code { background:rgba(108,204,255,0.14); color:#bfe4ff; }
+  .s04 { background:linear-gradient(135deg,#1a1a3a 0%,#5e2ca5 50%,#ec5990 100%); color:#fff; }
+  .s04 .numeral { color:rgba(255,255,255,0.25); } .s04 .pullquote { border-color:#fff; }
+  .s05 { background:#1a1a1a; color:#fff; }
+  .s05 h2 { color:#ffd166; } .s05 .numeral { color:#3a3a1a; }
+  .s06 { background:#faf7f0; color:#1a1a1a; }
+  .s06 h2 { color:#5a3a78; } .s06 .flaglist li span { color:#5a3a78; opacity:1; }
+  .s07 { background:#0d2438; color:#e8e3d8; }
+  .s07 h2 { color:#5fb8b8; } .s07 .numeral { color:#153347; } .s07 code { background:rgba(95,184,184,0.16); color:#bfe9e9; }
+  .s08 { background:#ffe600; color:#000; }
+  .s08 .numeral { color:#000; } .s08 .pullquote { border-color:#000; }
+  .s09 { background:#1a1a1a; color:#fff; }
+  .s09 .numeral { color:#3a3a1a; }
+
+  @media (max-width:768px){
+    .spread{ padding:60px 6vw; }
+    .catgrid,.statrow{ grid-template-columns:1fr; }
+    .flaglist li{ flex-direction:column; gap:4px; }
+  }
+
+  /* ===== PRINT / PDF OPTIMIZATION ===== */
+  @media print {
+    @page { size: 1280px 1024px; margin: 0; }
+    html, body { margin:0!important; padding:0!important; }
+    * { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; color-adjust:exact!important; }
+    .spread, .masthead, .colophon {
+      min-height:1024px!important; height:1024px!important; max-height:1024px!important; width:1280px!important;
+      padding:56px 74px!important; page-break-after:always!important; page-break-inside:avoid!important;
+      break-after:page!important; break-inside:avoid!important; overflow:hidden!important; box-sizing:border-box!important;
+      display:flex!important; flex-direction:column!important; justify-content:flex-start!important;
+    }
+    .masthead { justify-content:space-between!important; }
+    .colophon { page-break-after:auto!important; break-after:auto!important; justify-content:center!important; }
+    .source-line { margin-top:auto!important; padding-top:16px!important; font-size:13px!important; }
+    .numeral { font-size:120px!important; margin-bottom:0!important; }
+    .kicker { font-size:13px!important; margin-bottom:14px!important; }
+    .standfirst { font-size:18px!important; margin-top:16px!important; line-height:1.4!important; }
+    h2 { font-size:44px!important; line-height:1.03!important; }
+    .s01 .numeral { font-size:150px!important; } .s01 h2 { font-size:56px!important; }
+    .flaglist { margin-top:18px!important; } .flaglist li { padding:9px 0!important; font-size:16px!important; }
+    .flaglist li span { font-size:12px!important; }
+    .pullquote { font-size:30px!important; margin:22px 0!important; padding:18px 24px!important; }
+    .pullquote.small { font-size:22px!important; }
+    pre { font-size:14px!important; padding:18px 22px!important; margin-top:16px!important; line-height:1.4!important; }
+    .catgrid { gap:12px!important; margin-top:18px!important; } .cat { padding:12px 16px!important; font-size:14px!important; }
+    .cat b { font-size:12px!important; }
+    .statrow { gap:24px 48px!important; } .big { font-size:150px!important; } .lab { font-size:17px!important; }
+    .masthead-title { font-size:112px!important; line-height:0.85!important; margin:24px 0 24px!important; }
+    .masthead-sub { font-size:26px!important; margin-bottom:32px!important; }
+    .masthead-top { font-size:14px!important; padding-bottom:16px!important; }
+    .masthead-bottom { font-size:15px!important; padding-top:16px!important; }
+    .masthead-bottom b { font-size:12px!important; margin-bottom:4px!important; }
+    .colophon h3 { font-size:72px!important; } .colophon p { font-size:20px!important; line-height:1.45!important; }
+    .colophon .footer-meta { font-size:14px!important; margin-top:32px!important; padding-top:20px!important; }
+  }
+
+  .masthead { min-height:100vh; background:#f5f3ee; padding:60px 8vw; display:flex; flex-direction:column; justify-content:space-between; border-bottom:12px solid #1a1a1a; }
+  .masthead-top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1a1a1a; padding-bottom:24px; font-weight:600; font-size:20px; letter-spacing:0.15em; text-transform:uppercase; }
+  .masthead-title { font-family:'Fraunces'; font-weight:900; font-size:clamp(72px,12vw,200px); line-height:0.85; letter-spacing:-0.04em; margin:60px 0 36px; font-variation-settings:'opsz' 144; }
+  .masthead-title em { font-style:italic; font-variation-settings:'opsz' 144,'SOFT' 100,'WONK' 1; color:#c33; }
+  .masthead-sub { font-family:'Fraunces'; font-style:italic; font-size:clamp(26px,3.2vw,44px); line-height:1.28; max-width:1100px; color:#444; margin-bottom:56px; }
+  .masthead-sub b { color:#1a1a1a; font-style:normal; }
+  .masthead-bottom { display:grid; grid-template-columns:repeat(4,1fr); gap:36px; border-top:2px solid #1a1a1a; padding-top:24px; font-size:19px; font-weight:500; }
+  .masthead-bottom b { display:block; font-size:14px; letter-spacing:0.12em; text-transform:uppercase; color:#888; margin-bottom:6px; font-weight:600; }
+  @media (max-width:768px){ .masthead-bottom{ grid-template-columns:1fr 1fr; } }
+
+  .colophon { min-height:60vh; background:#1a1a1a; color:#f5f3ee; padding:100px 8vw; display:flex; flex-direction:column; justify-content:center; }
+  .colophon h3 { font-family:'Fraunces'; font-weight:900; font-size:clamp(56px,8vw,120px); line-height:0.95; letter-spacing:-0.03em; margin-bottom:32px; font-variation-settings:'opsz' 144; }
+  .colophon p { font-family:'Fraunces'; font-style:italic; font-size:clamp(23px,2.5vw,32px); line-height:1.45; max-width:1100px; color:#c0bcb0; font-weight:300; }
+  .colophon .footer-meta { margin-top:56px; border-top:2px solid #444; padding-top:32px; font-weight:600; font-size:18px; letter-spacing:0.15em; text-transform:uppercase; color:#888; }
+</style>
+</html>

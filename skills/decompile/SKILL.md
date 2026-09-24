@@ -76,6 +76,26 @@ static reads).
 
 ## 5. Limits
 
+- device bridges
+`.github/workflows/muse-decompile-watch.yml` runs every 6 hours on GitHub's
+own runners — no local machine needed:
+
+1. `skills/decompile/check_update.py` fetches the Sparkle appcast and compares
+   the newest `<item>` against `findings/LATEST_VERSION`. Nothing happens when
+   the version matches.
+2. On a new version, `skills/decompile/analyze.py` downloads the DMG, records
+   its SHA-256, extracts with 7z, and runs the full static analysis:
+   - `metaconfig.json` → `findings/flag-registry-<ver>.md`
+   - native binary `strings` → `findings/desktop-flags-<ver>.md`
+     (`hatch_desktop:*`, `hatch_web:*`, config/cache path references)
+   - Info.plist → version/build/channel in each report header
+   - diff vs previous version → `findings/diff-<prev>-to-<ver>.md`
+3. The workflow commits everything to `main` and pushes.
+
+Trigger a manual run anytime from the repo's Actions tab (workflow_dispatch).
+Manual deep dives (index.html JS analysis, HTTP cache reads) still need a Mac
+with shell access — the workflow covers the reproducible static layer.
+
 - device bridges (Muse `device.invoke` `files.upload`) cap uploads at 50 MB —
   `index.html` (~53 MB) cannot be pulled that way; analyze it on a Mac with
   shell access, or pull `metaconfig.json` (4 KB) for the flag list alone.
@@ -84,3 +104,24 @@ static reads).
 - Re-run this skill on every new public build; flags get added, renamed, and
   re-namespaced between versions (v1.0's on-disk `endo-values-public-*.json`
   cache is gone in 2.2).
+
+## 6. Wave automation (set and forget)
+
+`.github/workflows/muse-decompile-watch.yml` runs every 6 hours on GitHub's
+own runners — no local machine needed:
+
+1. `skills/decompile/check_update.py` fetches the Sparkle appcast and compares
+   the newest `<item>` against `findings/LATEST_VERSION`. Nothing happens when
+   the version matches.
+2. On a new version, `skills/decompile/analyze.py` downloads the DMG, records
+   its SHA-256, extracts with 7z, and runs the full static analysis:
+   - `metaconfig.json` -> `findings/flag-registry-<ver>.md`
+   - native binary `strings` -> `findings/desktop-flags-<ver>.md`
+     (`hatch_desktop:*`, `hatch_web:*`, config/cache path references)
+   - Info.plist -> version/build/channel in each report header
+   - diff vs previous version -> `findings/diff-<prev>-to-<ver>.md`
+3. The workflow commits everything to `main` and pushes.
+
+Trigger a manual run anytime from the repo's Actions tab (workflow_dispatch).
+Manual deep dives (index.html JS analysis, HTTP cache reads) still need a Mac
+with shell access — the workflow covers the reproducible static layer.

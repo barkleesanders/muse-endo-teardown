@@ -1,0 +1,46 @@
+name: muse-decompile-watch
+
+# Wave automation for the /decompile skill.
+# Every 6 hours: check Meta's Sparkle appcast for a new Muse Mac release.
+# On a new version: download the DMG, extract it, run the full static analysis,
+# and commit the findings (flag registry + diff vs previous version) to main.
+# Fully static analysis of a publicly distributed installer — no accounts, no auth.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours, offset to avoid the top of the hour
+  workflow_dispatch: # manual run from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-decompile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check appcast for a new release
+        id: check
+        run: python3 skills/decompile/check_update.py
+
+      - name: Install extraction tools
+        if: steps.check.outputs.new_version != ''
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full binutils
+
+      - name: Download DMG and run full analysis
+        if: steps.check.outputs.new_version != ''
+        run: >
+          python3 skills/decompile/analyze.py
+          "${{ steps.check.outputs.dmg_url }}"
+          "${{ steps.check.outputs.new_version }}"
+
+      - name: Commit findings to main
+        if: steps.check.outputs.new_version != ''
+        run: |
+          git config user.name "muse-decompile-bot"
+          git config user.email "decompile@barkleesanders.com"
+          git add findings/
+          git commit -m "Decompile Muse ${{ steps.check.outputs.new_version }}: full flag registry + diff" || exit 0
+          git push

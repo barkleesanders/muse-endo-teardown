@@ -1,0 +1,211 @@
+<meta charset="utf-8">
+<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muse CVM Attestation — Security Review</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{ --ink:#0f172a; --sub:#475569; --line:#e2e8f0; --card:#ffffff; --bg:#f8fafc;
+         --good:#166534; --goodbg:#dcfce7; --warn:#92400e; --warnbg:#fef3c7; --bad:#991b1b; --badbg:#fee2e2;
+         --accent:#1e3a8a; --code:#0b1324; }
+  html{ background:var(--bg); }
+  body{ color:var(--ink); font-family:"Public Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  code,pre,.mono{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; }
+  .chip{ display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .kbd{ background:#eef2ff; color:#312e81; border:1px solid #c7d2fe; border-radius:6px; padding:1px 6px; font-size:12.5px; }
+  table{ width:100%; border-collapse:collapse; }
+  th,td{ text-align:left; vertical-align:top; padding:9px 12px; border-bottom:1px solid var(--line); font-size:14px; color:var(--ink); }
+  th{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--sub); background:#f1f5f9; }
+  h1,h2,h3{ color:var(--ink); }
+  @media print{
+    html,body{ background:#fff; }
+    .card{ break-inside:avoid; }
+    .noprint{ display:none; }
+    a{ color:#1e3a8a; text-decoration:none; }
+  }
+</style>
+</head>
+<body class="leading-relaxed">
+<div class="max-w-5xl mx-auto px-4 py-10">
+
+  <header class="mb-8">
+    <div class="chip" style="background:var(--badbg); color:var(--bad);">Reverse-engineering findings · not a bypass</div>
+    <h1 class="text-3xl font-extrabold mt-3">Muse CVM Attestation — Security Review</h1>
+    <p class="mt-2" style="color:var(--sub);">How the confidential-VM attestation gate is built, what it protects, and whether it can be defeated by modifying the app.</p>
+    <div class="mt-4 grid sm:grid-cols-4 grid-cols-2 gap-3 text-[13px]">
+      <div class="card p-3"><div style="color:var(--sub)">Target</div><div class="font-semibold">Muse.app (“Endo”) v4.1</div></div>
+      <div class="card p-3"><div style="color:var(--sub)">Build</div><div class="font-semibold mono">1077426479</div></div>
+      <div class="card p-3"><div style="color:var(--sub)">Reviewed</div><div class="font-semibold">2026-09-28</div></div>
+      <div class="card p-3"><div style="color:var(--sub)">Bundle</div><div class="font-semibold mono">com.meta.endo</div></div>
+    </div>
+    <p class="mt-2 text-[12px] mono" style="color:var(--sub); word-break:break-all;">binary sha256 029997a6a3ad7f5336dbf96b2ce566e9d126b1b14c4b86c7e3cd87a90a1b6f36 · Developer ID Meta Platforms V9WTTPBFK9 · hardened runtime · NOT FairPlay</p>
+  </header>
+
+  <!-- VERDICT -->
+  <section class="card p-5 mb-8" style="border-color:#bbf7d0;">
+    <div class="flex items-start gap-3">
+      <div class="chip" style="background:var(--goodbg); color:var(--good);">Verdict</div>
+      <div>
+        <p class="font-semibold text-lg">The gate that keeps an outside client out is <span style="color:var(--accent)">server-side and cryptographic</span>. The attestation check that lives <em>in the app</em> protects the client, not the server — turning it off opens no door.</p>
+        <p class="mt-2" style="color:var(--sub);">Nothing you can patch in the local binary produces the two things the backend demands: a session <span class="kbd">auth_token</span> minted behind your logged-in session, and a completed Noise handshake against the confidential VM’s real private key. Those are held server-side. So “talk to Muse directly from an external client” stays blocked for the same reason as before — and it is <strong>not</strong> the attestation-verify step that blocks it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE HANDSHAKE -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">The handshake it rides on</h2>
+    <div class="card p-5">
+      <p class="text-[14px]" style="color:var(--sub);">Transport is a Noise_XX_25519_AESGCM_SHA256 session over <span class="mono">wss://&lt;vm&gt;.metaaivm.com/v1/noise</span>. Three messages, then the channel splits into two AES-GCM ciphers.</p>
+      <div class="grid md:grid-cols-3 gap-3 mt-4">
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#e0e7ff;color:#3730a3;">msg 1 · client → CVM</div>
+          <p class="mt-2 text-[13.5px]"><span class="mono">writeMessage1</span>: client ephemeral X25519 public key (the “client nonce”).</p>
+        </div>
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#fef3c7;color:#92400e;">msg 2 · CVM → client</div>
+          <p class="mt-2 text-[13.5px]"><span class="mono">readMessage2</span> (≥96 B): server ephemeral + encrypted server static + a <strong>confidential-VM attestation payload</strong>. Pure crypto here — it is decrypted and handed <em>up</em>, not judged.</p>
+        </div>
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#dcfce7;color:#166534;">msg 3 · client → CVM</div>
+          <p class="mt-2 text-[13.5px]"><span class="mono">writeMessage3</span>: client’s own encrypted static key → <span class="mono">split()</span> into tx/rx ciphers. Every later frame is AES-GCM under these.</p>
+        </div>
+      </div>
+      <p class="mt-4 text-[13px]" style="color:var(--sub);">The URL itself carries the server-side credentials: <span class="kbd">vm_id</span> · <span class="kbd">auth_token</span> · <span class="kbd">notary_token</span> · <span class="kbd">app_id=hatch-web</span> · <span class="kbd">request_id</span>.</p>
+    </div>
+  </section>
+
+  <!-- WHO VERIFIES WHAT -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">Two checks, pointed in opposite directions</h2>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="card p-5">
+        <div class="chip" style="background:var(--warnbg);color:var(--warn);">Client-side · patchable</div>
+        <h3 class="font-semibold mt-2">The attestation-verify (protects <em>you</em>)</h3>
+        <p class="mt-2 text-[14px]" style="color:var(--sub);">A trust evaluator confirms the VM you reached is a genuine confidential VM, bound to <em>this</em> handshake:</p>
+        <pre class="mono text-[12px] mt-2 p-3 rounded-lg" style="background:var(--code);color:#e2e8f0;overflow:auto;">if (message2Kind !== "attestation")
+    throw "owner_rv_challenge";
+await verify({ attestationPayload,
+  serverStaticPublicKey, handshakeHash,
+  clientNonce });        // else attestation_rejected</pre>
+        <p class="mt-2 text-[13.5px]">Strictness is a MobileConfig flag <span class="kbd">hatch_web:attestation_enforce_mode</span> — <strong>0 Off · 1 Staging · 2 Prod</strong> (default 0), with a user override and a downgrade reporter. It’s JS + a JS <span class="mono">verify()</span>, so it <em>can</em> be flipped or removed. Doing so only tells your client “don’t bother checking the VM is real.”</p>
+      </div>
+      <div class="card p-5">
+        <div class="chip" style="background:var(--badbg);color:var(--bad);">Server-side · not patchable</div>
+        <h3 class="font-semibold mt-2">The access gate (keeps others <em>out</em>)</h3>
+        <p class="mt-2 text-[14px]" style="color:var(--sub);">The backend serves the session only when all of these hold — none reproducible from the client:</p>
+        <ul class="mt-2 text-[13.5px] space-y-1 list-disc pl-5">
+          <li><span class="mono">auth_token</span> minted behind your authenticated session at <span class="mono">POST /api/hatch/token</span>.</li>
+          <li><span class="mono">notary_token</span> endorsing the noise session for that <span class="mono">vm_id</span> (per-CVM notary key; <span class="mono">delegation.</span> tokens are signed by <span class="mono">getHatchCvmNotarySigningKey(vm_id)</span>).</li>
+          <li>The Noise handshake completing against the CVM’s <strong>genuine X25519 static key</strong> — whose shared secret encrypts every frame.</li>
+        </ul>
+        <p class="mt-2 text-[13.5px]">An external party has none of these, and a local patch mints none of them.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PATCH DOES / DOESN'T -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">What modifying the app would — and would not — achieve</h2>
+    <div class="card overflow-hidden">
+      <table>
+        <thead><tr><th>If you…</th><th>Effect</th><th>Gets external access?</th></tr></thead>
+        <tbody>
+          <tr><td>Set <span class="mono">attestation_enforce_mode = 0</span> / delete the <span class="mono">verify()</span></td><td>Your client stops confirming the VM is genuine — you lose your own anti-MITM protection.</td><td><span class="chip" style="background:var(--badbg);color:var(--bad);">No</span></td></tr>
+          <tr><td>Replay a captured <span class="mono">attestationPayload</span></td><td>Fails — it’s bound to <span class="mono">serverStaticPublicKey + handshakeHash + clientNonce</span> of a live handshake.</td><td><span class="chip" style="background:var(--badbg);color:var(--bad);">No</span></td></tr>
+          <tr><td>Reuse the app’s <span class="mono">app_id</span> / build a fresh client</td><td>Still needs a live <span class="mono">auth_token</span> + <span class="mono">notary_token</span> + the CVM’s private key.</td><td><span class="chip" style="background:var(--badbg);color:var(--bad);">No</span></td></tr>
+          <tr><td>Drive the real logged-in session (browser shim / native paste-and-click)</td><td>The genuine client completes the handshake; you ride it. This already works.</td><td><span class="chip" style="background:var(--goodbg);color:var(--good);">Yes (supported)</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-[13px]" style="color:var(--sub);">This is why the standing constraint (don’t defeat the attestation, don’t patch the signed loader) isn’t even the limiting factor for direct access: the limiting factor is <strong>server-held secrets</strong>. Decompilation doesn’t yield those.</p>
+  </section>
+
+  <!-- THREAT MODEL -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">Threat model</h2>
+    <div class="card overflow-hidden">
+      <table>
+        <thead><tr><th>Attacker position</th><th>Against</th><th>Outcome</th></tr></thead>
+        <tbody>
+          <tr><td>Network MITM between client and CVM</td><td>Confidentiality / impersonating the VM</td><td>Blocked when enforce ≥ Staging: attestation must verify against the live handshake. <span style="color:var(--warn)">If a user flips enforce to Off, this protection is voluntarily dropped.</span></td></tr>
+          <tr><td>External client with no session</td><td>Reaching the backend RPCs</td><td>Blocked: no <span class="mono">auth_token</span>/<span class="mono">notary_token</span>, cannot complete the handshake.</td></tr>
+          <tr><td>Local user modifying their own app</td><td>Their own client checks</td><td>Can disable the client attestation check; gains no server access from it.</td></tr>
+          <tr><td>Compromised/fake CVM presenting an <span class="mono">owner_rv_challenge</span> only</td><td>Serving the owner without attesting</td><td>Rejected under strict evaluator (<span class="mono">message2Kind !== "attestation"</span> ⇒ throw).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- EVIDENCE -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">Evidence</h2>
+    <p class="text-[13px] mb-2" style="color:var(--sub);">All from the v4.1 web client at <span class="mono">Muse.app/Contents/Resources/hatch/index.html</span> (minified; symbols quoted verbatim).</p>
+    <div class="card overflow-hidden">
+      <table>
+        <thead><tr><th>Symbol</th><th>What it proves</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">NoiseXXInitiator.readMessage2</td><td>Decrypts server static + tail and returns the attestation payload; contains no verification itself.</td></tr>
+          <tr><td class="mono">createStrictSharedAgentNoiseTrustEvaluator</td><td>The verify step: requires <span class="mono">message2Kind==="attestation"</span>, calls <span class="mono">verify({attestationPayload,serverStaticPublicKey,handshakeHash,clientNonce})</span>, throws <span class="mono">attestation_rejected</span> / <span class="mono">owner_rv_challenge</span>.</td></tr>
+          <tr><td class="mono">useHatchAttestationEnforcementTier</td><td>Reads <span class="mono">hatch_web:attestation_enforce_mode</span> (default 0) + employee flag + override → resolved tier; downgrades reported to Sentry.</td></tr>
+          <tr><td class="mono">AttestationEnforcementControlImpl</td><td>User-facing control mapping 0→Off, 1→Staging, 2→Prod — confirms it’s a flippable client setting.</td></tr>
+          <tr><td class="mono">resolveHatchCvmNoiseNotaryToken</td><td><span class="mono">delegation.</span> tokens endorsed via <span class="mono">getHatchCvmNotarySigningKey(vm_id).endorse()</span>; per-CVM notary signing key.</td></tr>
+          <tr><td class="mono">buildWebSocketUrl</td><td>Handshake URL requires <span class="mono">auth_token</span>, <span class="mono">notary_token</span>, <span class="mono">vm_id</span>, <span class="mono">app_id=hatch-web</span>, <span class="mono">request_id</span>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DEEP DIVE: WHAT verify() ACCEPTS -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">Deep dive — what <span class="mono">verify()</span> actually accepts <span class="chip" style="background:#e0e7ff;color:#3730a3;">addendum</span></h2>
+    <div class="card p-5">
+      <p class="text-[14px]">The verifier is real, not a stub. It is <span class="mono">SnpAttestationVerifier</span> — the CVMs are <strong>AMD SEV-SNP</strong> (tcb steppings famId 25 = Milan/Genoa, famId 26 = Turin). <span class="mono">.verify()</span> → <span class="mono">runAttestationCheck</span>, which lazy-loads an in-bundle <span class="mono">pipeline</span> + <span class="mono">policy</span> module; cert chains are validated with a full X.509/CT library (pkijs). The bundle also carries Intel-TDX parsing code (<span class="mono">tdx</span>, <span class="mono">mrtd</span>, <span class="mono">rtmr</span>), but the instantiated Muse verifier is SNP.</p>
+
+      <p class="mt-4 font-semibold">It checks three things, none of which is a pinned image hash:</p>
+      <div class="grid md:grid-cols-3 gap-3 mt-2">
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#dcfce7;color:#166534;">1 · handshake binding</div>
+          <p class="mt-2 text-[13px]"><span class="mono">SHA-256(binding) == report_data[0:32]</span> (else <span class="mono">BindingMismatch</span>); <span class="mono">report_data[32:64]</span> must be all-zero (<span class="mono">ReportDataTrailNotZero</span>). Ties the SNP report to this exact handshake.</p>
+        </div>
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#fef3c7;color:#92400e;">2 · hardware policy</div>
+          <p class="mt-2 text-[13px]"><span class="mono">allowDebug:false</span> · <span class="mono">requiredVmpl:0</span> · per-stepping <span class="mono">tcbFloors</span> (min bootloader/tee/snp/microcode) · <span class="mono">allowMigration:false</span> · <span class="mono">denyGuestSmt</span>/<span class="mono">denyPlatformSmt</span> · <span class="mono">requirePageSwapDisable</span> · <span class="mono">requireAliasCheck</span>.</p>
+        </div>
+        <div class="card p-4" style="background:#f8fafc;">
+          <div class="chip" style="background:#e0e7ff;color:#3730a3;">3 · transparency + revocation</div>
+          <p class="mt-2 text-[13px]">Image manifest must be a <strong>Cloudflare-endorsed</strong> authenticated manifest (<span class="mono">cloudflareTransparencyPolicy</span>); else <span class="mono">RevocationPolicyInvalid</span>. Must be un-revoked (<span class="mono">revocationList[namespace]</span>) and fresh (<span class="mono">maxAgeMs</span> / <span class="mono">maxFutureSkewMs</span>).</p>
+        </div>
+      </div>
+
+      <div class="card p-4 mt-4" style="background:#eef2ff; border-color:#c7d2fe;">
+        <p class="text-[14px]"><strong>The crux:</strong> <span class="mono">verify()</span> does <strong>not</strong> pin a launch-measurement hash in the client. It accepts <em>any genuine AMD SEV-SNP VM</em> that meets the hardware floor <strong>and</strong> presents a Cloudflare-endorsed, un-revoked, fresh image manifest bound to the live handshake. Workload identity comes from the <strong>transparency/manifest chain</strong> (rooted in Cloudflare + AMD), not from a hash baked into the app. That is a deliberate design choice: the shipped client never has to be re-released when the CVM image is updated — the endorsement/transparency service is the moving part.</p>
+      </div>
+
+      <p class="mt-4 text-[13px]" style="color:var(--sub);"><strong>Owner path vs shared-agent path.</strong> The owner’s own connection runs <span class="mono">activeAttestationVerifier()</span> → <span class="mono">PRODUCTION_ATTESTATION_VERIFIER</span> at tier <em>prod</em>, <span class="mono">STAGING_…</span> at <em>staging</em>, and <span class="mono">void 0</span> (no verification) at tier <em>off</em> — the shipped default. The shared-agent path uses the separate <span class="mono">strictSharedAgentAttestationVerifier</span>, which always requires <span class="mono">message2Kind==="attestation"</span>. Notary token is server-fetched: <span class="mono">POST /api/hatch/noise-notary-token</span>. So at the default tier the owner’s own CVM is <em>not</em> attestation-checked client-side; MobileConfig raising the tier to prod turns on full SNP quote verification.</p>
+    </div>
+  </section>
+
+  <!-- RESIDUAL -->
+  <section class="mb-8">
+    <h2 class="text-xl font-bold mb-3">Residual observations</h2>
+    <ul class="space-y-2 text-[14px] list-disc pl-5" style="color:var(--ink);">
+      <li><strong>Default enforce mode is 0 (Off).</strong> The client’s own VM-genuineness check is not on by default in this build; it’s raised by MobileConfig (Staging/Prod) and employee tiers. This is a client self-protection posture, not the access gate — but worth noting that anti-MITM verification is opt-in from the shipped default.</li>
+      <li><strong>Employee downgrade path exists</strong> (<span class="mono">ecto1_is_employee</span> feeds <span class="mono">resolveAttestationTier</span>, with <span class="mono">reportAttestationDowngrade</span>) — a rollout/testing affordance, logged when it lowers the tier.</li>
+      <li><strong>Attestation is handshake-bound</strong> (serverStaticPublicKey + handshakeHash + clientNonce), which correctly defeats replay/transplant of a captured attestation.</li>
+      <li><strong>Corrected (see deep dive above):</strong> a client-side measurement policy <em>is</em> shipped — an earlier draft of this review had not yet located it. It lives in the code-split <span class="mono">init_policy</span> module (<span class="mono">productionPolicy</span> = hardware + transparency + revocation) and is <strong>structural + Cloudflare-transparency-based, not a pinned image hash</strong>. So “what does verify() accept” is now answered: any genuine SEV-SNP VM meeting the hardware floor with a Cloudflare-endorsed, un-revoked, fresh, handshake-bound manifest.</li>
+    </ul>
+  </section>
+
+  <!-- SCOPE -->
+  <section class="card p-5" style="background:#f1f5f9;">
+    <h3 class="font-semibold mb-2">Scope &amp; posture</h3>
+    <p class="text-[13.5px]" style="color:var(--sub);">Defensive reverse-engineering of software on the owner’s own machine (DMCA §1201(f) interoperability / security research). This document describes the mechanism and its properties only. No bypass, exploit, patch, or attestation defeat was produced or attempted; the CVM attestation and the signed loader were not modified. The only “talk directly” paths remain the browser-backed shim driving the real logged-in session and native paste-and-click.</p>
+  </section>
+
+  <p class="mt-8 text-[12px]" style="color:var(--sub);">Muse v4.1 · reviewed 2026-09-28 · goals HOME-akkmb + HOME-8hka1 (verify() deep-dive addendum)</p>
+</div>
+</body>
+</html>

@@ -12,6 +12,8 @@ switched **off** by server‑delivered feature flags.
 
 **Read the illustrated report:** [`report/endo-edition-2026-09-17.pdf`](report/endo-edition-2026-09-17.pdf)
 
+**Transport + attestation review (2026‑09‑28):** [`report/muse-cvm-attestation-security-review-2026-09-28.pdf`](report/muse-cvm-attestation-security-review-2026-09-28.pdf) — how the Mac reaches the cloud VM (Noise‑framed HTTP) and the SEV‑SNP attestation gate that lets a session originate. See [the section below](#the-cloud-vms-front-door--transport-framing-and-the-attestation-gate).
+
 ---
 
 ## Subject
@@ -91,6 +93,39 @@ config edit or firewall rule enables computer‑use.
 Two flags in the same config give the plan away: an onboarding walkthrough that is **built but
 hidden** (`endo_enable_computer_use_onboarding`) and an **employee** switch shipped in the public
 build (`voyager_is_employee`). Consistent with internal testing now, ahead of a cohort rollout.
+
+## The cloud VM's front door — transport framing and the attestation gate
+
+A follow‑up review looked at *how* the Mac talks to that per‑user cloud VM, and at the
+control that decides whether a connection is allowed to originate at all. Findings only —
+no gate was defeated and no signed loader was patched; this is DMCA §1201(f) interoperability
+observation of software on a Mac the author owns.
+
+**Read the review:** [`report/muse-cvm-attestation-security-review-2026-09-28.pdf`](report/muse-cvm-attestation-security-review-2026-09-28.pdf)
+
+- **Transport is HTTP‑over‑Noise, in two protobuf layers.** The session is a
+  `Noise_XX_25519_AESGCM_SHA256` handshake over `wss://<vm>.metaaivm.com/v1/noise`. Inside it,
+  an inner envelope (`hatch.noise`) carries an `ApplicationRequest{verb, path, headers, body}` —
+  ordinary HTTP requests tunnelled through the encrypted channel — and an outer transport frame
+  (`ingress_rev_proxy.NoiseTransportFrame{chunk_id, chunk_index, total_chunks, payload}`) splits a
+  message into ≤65,489‑byte chunks (≤256 of them), each encrypted on the split‑transmit cipher.
+- **The gate is remote attestation, not a client secret.** A verifier
+  (`SnpAttestationVerifier`, AMD SEV‑SNP; Milan/Genoa/Turin) checks the VM's attestation report:
+  the report_data is bound to the handshake (`SHA‑256(binding) == reportData[0:32]`, upper half
+  zero), a structural hardware policy is enforced (`allowDebug:false`, `requiredVmpl:0`, TCB
+  floors, `allowMigration:false`, SMT denied, page‑swap/alias checks required), and the cert
+  manifest must be Cloudflare‑endorsed, un‑revoked, and fresh.
+- **What `verify()` accepts.** There is **no pinned measurement hash** — it accepts *any* genuine
+  SEV‑SNP VM that meets the hardware floor and presents an endorsed, un‑revoked, handshake‑bound
+  manifest. The client‑side check is tier‑gated by a MobileConfig flag
+  (`hatch_web:attestation_enforce_mode`, default `0`/Off); the real barrier for an external client
+  is **server‑side and cryptographic** — a signed `auth_token` + `notary_token` plus a handshake
+  against the CVM's genuine static key, none of which a local flag flip or client patch can mint.
+- **Consequence.** Every method is reachable *inside* an attested session, but originating one
+  from an outside client requires server‑held signing keys, not a bypassable local gate. The
+  supported interop paths remain a browser‑backed shim and native paste‑and‑click.
+
+CVM/transport figures measured on **2026‑09‑28**.
 
 ## Method
 

@@ -1,6 +1,6 @@
 # Muse 9.0 client flag registry
 
-Build 1098887160, production channel. DMG SHA-256: `ec9bb6ffe9839f5fae8bc568c8e8cfc0e78a2127297d7a72951eadf18552d0f4`.
+Build 1101070548, production channel. DMG SHA-256: `ffb379c410184519ebb48d42cd759675b6ca7552e969e0f77382b6678bec8906`.
 Source: `Muse.app/Contents/Resources/hatch/metaconfig.json`.
 Client defaults live in the bundled JS; server-side values are not
 visible statically — see the /decompile skill ground-truth rule.

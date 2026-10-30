@@ -1,6 +1,6 @@
 # Muse 10.0 native binary findings
 
-Build 1102621119. Extracted via `strings` on `Contents/MacOS/Muse`.
+Build 1103401639. Extracted via `strings` on `Contents/MacOS/Muse`.
 These are string references, not proof of behavior.
 
 ## hatch_desktop flags (25)

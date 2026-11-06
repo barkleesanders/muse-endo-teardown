@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check appcast for a new release
         id: check
@@ -31,16 +31,21 @@ jobs:
 
       - name: Download DMG and run full analysis
         if: steps.check.outputs.new_version != ''
+        env:
+          DMG_URL: ${{ steps.check.outputs.dmg_url }}
+          NEW_VERSION: ${{ steps.check.outputs.new_version }}
         run: >
           python3 skills/decompile/analyze.py
-          "${{ steps.check.outputs.dmg_url }}"
-          "${{ steps.check.outputs.new_version }}"
+          "$DMG_URL"
+          "$NEW_VERSION"
 
       - name: Commit findings to main
         if: steps.check.outputs.new_version != ''
+        env:
+          NEW_VERSION: ${{ steps.check.outputs.new_version }}
         run: |
           git config user.name "muse-decompile-bot"
           git config user.email "decompile@barkleesanders.com"
           git add findings/
-          git commit -m "Decompile Muse ${{ steps.check.outputs.new_version }}: full flag registry + diff" || exit 0
+          git commit -m "Decompile Muse ${NEW_VERSION}: full flag registry + diff" || exit 0
           git push
